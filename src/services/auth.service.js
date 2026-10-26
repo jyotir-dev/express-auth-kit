@@ -114,7 +114,6 @@ exports.login = async (body) => {
 
 // Me
 exports.me = async (user) => {
-    console.log(user)
     return {
         response: {
             success: true,
