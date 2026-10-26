@@ -2,7 +2,7 @@
 module.exports = ({ user, resetURL }) => {
 
     // Your app's name, used in the subject, copy, wordmark and footer.
-    const appName = process.env.APP_NAME || 'authkit';
+    const appName = process.env.APP_NAME || 'AuthKit';
 
     // SF Pro on Apple devices, Inter where supported, native system fonts elsewhere.
     const font = `-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif`;

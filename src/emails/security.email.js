@@ -2,7 +2,7 @@
 module.exports = ({ user, secureAccountURL }) => {
 
     // Your app's name, used in the subject, copy, wordmark and footer.
-    const appName = process.env.APP_NAME || 'authkit';
+    const appName = process.env.APP_NAME || 'AuthKit';
 
     const changedAt = new Date().toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' UTC';
 
