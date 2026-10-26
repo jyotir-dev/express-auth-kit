@@ -1,17 +1,27 @@
 {
-  "name": "backend",
+  "name": "express-auth-kit",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Production-ready authentication for Express 5 and MongoDB.",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "express",
+    "mongodb",
+    "authentication",
+    "jwt",
+    "boilerplate",
+    "template"
+  ],
+  "author": "jyotir-dev",
+  "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "@solana/web3.js": "^1.99.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -24,8 +34,6 @@
     "nodemailer": "^10.0.12"
   },
   "allowScripts": {
-    "bcrypt@6.0.0": true,
-    "bufferutil@4.1.0": true,
-    "utf-8-validate@6.0.6": true
+    "bcrypt@6.0.0": true
   }
 }
