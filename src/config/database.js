@@ -6,7 +6,7 @@ const log = require('../lib/log');
 
 // Connection Options
 const CONNECTION_OPTIONS = {
-    appName: 'authkit',
+    appName: process.env.APP_NAME || 'authkit',
     serverSelectionTimeoutMS: 10000
 };
 
