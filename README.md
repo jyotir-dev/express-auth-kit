@@ -46,7 +46,8 @@ It's plain Express, so there's no framework to learn. Clone it, read it in an af
 - **Email verification:** single-use links, with resend
 - **Password reset:** forgot, reset, and a check route so your reset page can reject dead links on load
 - **Password change:** signs the user out of every device
-- **Route guards:** `requireAuth()` and `requireVerified()` for your own routes
+- **Route guards:** `requireAuth()`, `requireVerified()` and `requireRole()` for your own routes
+- **Roles:** every account has a role (`user` or `admin`), and routes can be limited to one or more roles
 - **Transactional emails:** branded HTML for every flow, with plain-text versions
 - **Consistent errors:** every failure returns `{ success, code, message }`, including malformed and oversized request bodies
 
@@ -107,13 +108,45 @@ await fetch('http://localhost:5000/api/v1/auth/login', {
 
 ```js
 const requireAuth = require('../middlewares/auth.middleware');
+const requireRole = require('../middlewares/role.middleware');
 const requireVerified = require('../middlewares/verification.middleware');
+
+const { USER_ROLE } = require('../enums/user.enums');
 
 router.get('/projects', requireAuth(), projectController.list);
 router.post('/projects', requireAuth(), requireVerified(), projectController.create);
+router.delete('/projects/:id', requireAuth(), requireRole(USER_ROLE.ADMIN), projectController.remove);
 ```
 
-`requireAuth()` loads the signed-in user onto `req.user`. `requireVerified()` rejects accounts that haven't confirmed their email with `403 EMAIL_NOT_VERIFIED`.
+`requireAuth()` loads the signed-in user onto `req.user`. `requireVerified()` rejects accounts that haven't confirmed their email with `403 EMAIL_NOT_VERIFIED`. `requireRole()` rejects users whose role isn't listed with `403 AUTH_FORBIDDEN_ROLE`, and always goes after `requireAuth()`.
+
+### Roles
+
+Every account starts as `user`. Roles live in `src/enums/user.enums.js`:
+
+```js
+const USER_ROLE = Object.freeze({
+    USER: 'user',
+    ADMIN: 'admin'
+});
+```
+
+Pass one role or several. A user gets through if their role is any of them:
+
+```js
+requireRole(USER_ROLE.ADMIN)
+requireRole(USER_ROLE.ADMIN, USER_ROLE.SUPPORT)   // after adding SUPPORT to USER_ROLE
+```
+
+To add a role, add it to `USER_ROLE`. Each route lists exactly who can use it; there's no hierarchy, so an admin isn't let through a route that only lists `support`.
+
+No API route can set a role, so a request can never promote itself. Make someone an admin directly in the database:
+
+```js
+db.users.updateOne({ username: 'maya' }, { $set: { role: 'admin' } })
+```
+
+The role is read from the database on every request, not stored in the session cookie, so a promotion or demotion takes effect on the user's next request.
 
 ### Add a feature the same way
 
@@ -150,12 +183,13 @@ exports.create = (params, body, query) => {
 
 - Every middleware is a factory: always call it, as in `requireAuth()`, `rateLimit(limits)`, `validateRequest(validator)`.
 - Names start with a verb that says what happens, and each file is named after its concern.
-- Order on every route: `rateLimit → requireAuth → requireVerified → validateRequest → controller`. Cheap checks run first.
+- Order on every route: `rateLimit → requireAuth → requireVerified → requireRole → validateRequest → controller`. Cheap checks run first.
 
 | File | Export | Used in |
 | --- | --- | --- |
 | `auth.middleware.js` | `requireAuth()` | routes |
 | `verification.middleware.js` | `requireVerified()` | routes |
+| `role.middleware.js` | `requireRole(...roles)` | routes |
 | `ratelimit.middleware.js` | `rateLimit(limits)` | routes |
 | `validation.middleware.js` | `validateRequest(validator)` | routes |
 | `logger.middleware.js` | `logRequest()` | `app.js` |
@@ -246,6 +280,7 @@ Every error has the same shape, so your frontend can branch on `code` and show `
 | 401 | `SESSION_EXPIRED` | The session was ended by a password change or reset |
 | 401 | `USER_NOT_FOUND` | The account no longer exists |
 | 403 | `EMAIL_NOT_VERIFIED` | The route needs a verified email |
+| 403 | `AUTH_FORBIDDEN_ROLE` | The user's role isn't allowed on this route |
 | 404 | `ROUTE_NOT_FOUND` | No such route |
 | 409 | `USER_ALREADY_EXISTS` | The username or email is taken |
 | 409 | `EMAIL_ALREADY_VERIFIED` | Resend was called on a verified account |
@@ -266,6 +301,7 @@ Every error has the same shape, so your frontend can branch on `code` and show `
 | Account enumeration | Login runs a full bcrypt check even for unknown usernames, and forgot-password answers the same either way. |
 | Brute force | Per-route rate limits, from 10 failed logins per 15 minutes to 5 emails per hour. |
 | Request abuse | Helmet headers, CORS locked to your client, and a 10 kB body limit with clean `400` and `413` errors. |
+| Privilege escalation | No route accepts a `role`, so accounts can't promote themselves. Roles are checked against the database on every request, so a demotion applies immediately. |
 | Race conditions | State changes are conditional atomic updates, so two concurrent requests can't both succeed. |
 
 <details>
@@ -306,8 +342,9 @@ src/
 ├── validators/     request checks
 ├── controllers/    HTTP in, HTTP out
 ├── services/       the auth logic
-├── middlewares/    guards, rate limiting, validation, logging and errors
+├── middlewares/    guards, roles, rate limiting, validation, logging and errors
 ├── models/         User
+├── enums/          user roles
 ├── errors/         typed HTTP errors
 ├── security/       JWT and token hashing
 ├── mailers/        when each email is sent
