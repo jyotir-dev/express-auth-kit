@@ -1,6 +1,9 @@
 // Dependencies
 const mongoose = require('mongoose');
 
+// Enums
+const { USER_ROLE } = require('../enums/user.enums');
+
 // User Schema
 const userSchema = new mongoose.Schema({
 
