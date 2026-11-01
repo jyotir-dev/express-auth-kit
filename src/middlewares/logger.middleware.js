@@ -18,24 +18,27 @@ function getStatusColor(status) {
     return COLORS.magenta;
 }
 
-// Logger Middleware
-module.exports = (req, res, next) => {
+// Log Request
+function logRequest() {
+    return function logRequest(req, res, next) {
+        const start = process.hrtime.bigint();
 
-    const start = process.hrtime.bigint();
+        res.on('finish', () => {
+            const duration = Number(process.hrtime.bigint() - start) / 1_000_000;
+            const statusColor = getStatusColor(res.statusCode);
 
-    res.on('finish', () => {
-        const duration = Number(process.hrtime.bigint() - start) / 1_000_000;
-        const statusColor = getStatusColor(res.statusCode);
-        
-        console.log(
-            `${COLORS.gray}${new Date().toLocaleTimeString()}${COLORS.reset} ` +
-            `${COLORS.cyan}${req.method.padEnd(5)}${COLORS.reset} ` +
-            `${req.originalUrl.padEnd(20)} ` +
-            `${statusColor}${res.statusCode}${COLORS.reset} ` +
-            `${COLORS.gray}${duration.toFixed(2)}ms${COLORS.reset}`
-        );
+            console.log(
+                `${COLORS.gray}${new Date().toLocaleTimeString()}${COLORS.reset} ` +
+                `${COLORS.cyan}${req.method.padEnd(5)}${COLORS.reset} ` +
+                `${req.originalUrl.padEnd(20)} ` +
+                `${statusColor}${res.statusCode}${COLORS.reset} ` +
+                `${COLORS.gray}${duration.toFixed(2)}ms${COLORS.reset}`
+            );
+        });
 
-    });
+        next();
+    };
+}
 
-    next();
-};
+// Export Middleware
+module.exports = logRequest;

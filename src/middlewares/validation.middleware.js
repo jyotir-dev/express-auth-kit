@@ -2,9 +2,9 @@
 const ApiError = require('../errors/api.error');
 const { BadRequestError } = require('../errors/http.errors');
 
-// Validate Middleware
-module.exports = (validator) => {
-    return (req, res, next) => {
+// Validate Request
+function validateRequest(validator) {
+    return function validateRequest(req, res, next) {
         try {
             validator(req.params, req.body, req.query);
             next();
@@ -12,4 +12,7 @@ module.exports = (validator) => {
             next(error instanceof ApiError ? error : new BadRequestError('Invalid request data.'));
         }
     };
-};
+}
+
+// Export Middleware
+module.exports = validateRequest;

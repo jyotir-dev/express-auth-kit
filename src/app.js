@@ -9,9 +9,9 @@ const authRoutes = require('./routes/auth.routes');
 const healthRoutes = require('./routes/health.routes');
 
 // Middlewares
-const errorMiddleware = require('./middlewares/error.middleware');
-const loggerMiddleware = require('./middlewares/logger.middleware');
-const fallbackMiddleware = require('./middlewares/fallback.middleware');
+const logRequest = require('./middlewares/logger.middleware');
+const handleError = require('./middlewares/error.middleware');
+const handleNotFound = require('./middlewares/notfound.middleware');
 
 // Express App
 const app = express();
@@ -24,7 +24,7 @@ if (process.env.NODE_ENV === 'production') {
 // Security Headers
 app.use(helmet());
 
-// Express Middleware
+// Express JSON
 app.use(express.json({ limit: '10kb' }));
 
 // Cookie Parser
@@ -36,8 +36,8 @@ app.use(cors({
     credentials: true
 }));
 
-// Logger Middleware
-app.use(loggerMiddleware);
+// Request Logger
+app.use(logRequest());
 
 // Health
 app.use('/api/health', healthRoutes);
@@ -45,11 +45,11 @@ app.use('/api/health', healthRoutes);
 // Routes
 app.use('/api/v1/auth', authRoutes);
 
-// Fallback Middleware
-app.use(fallbackMiddleware);
+// Not Found Handler
+app.use(handleNotFound());
 
-// Global Error Middleware
-app.use(errorMiddleware);
+// Error Handler
+app.use(handleError());
 
 // Export Express Application
 module.exports = app;
