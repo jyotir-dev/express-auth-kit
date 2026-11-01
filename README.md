@@ -25,9 +25,11 @@
 
 <p>
   <a href="#quick-start">Quick start</a> ·
+  <a href="#usage">Usage</a> ·
   <a href="#api">API</a> ·
+  <a href="#errors">Errors</a> ·
   <a href="#security">Security</a> ·
-  <a href="#project-structure">Structure</a>
+  <a href="#deployment">Deployment</a>
 </p>
 
 </div>
@@ -44,9 +46,9 @@ It's plain Express, so there's no framework to learn. Clone it, read it in an af
 - **Email verification:** single-use links, with resend
 - **Password reset:** forgot, reset, and a check route so your reset page can reject dead links on load
 - **Password change:** signs the user out of every device
-- **Route guards:** `requireAuth` and `requireVerified` for your own routes
-- **Transactional emails:** dark, branded HTML for every flow, with plain-text versions
-- **Consistent errors:** every failure returns `{ success, code, message }`
+- **Route guards:** `requireAuth()` and `requireVerified()` for your own routes
+- **Transactional emails:** branded HTML for every flow, with plain-text versions
+- **Consistent errors:** every failure returns `{ success, code, message }`, including malformed and oversized request bodies
 
 ## Quick start
 
@@ -57,10 +59,10 @@ git clone https://github.com/jyotir-dev/express-auth-kit.git
 cd express-auth-kit
 npm install
 cp .env.example .env   # then fill it in
-npm start
+npm run dev
 ```
 
-The API runs on `http://localhost:5000`, and `GET /api/health` confirms it's up.
+The API runs on `http://localhost:5000`, and `GET /api/health` confirms it's up. `npm run dev` restarts on every save; use `npm start` in production.
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -76,23 +78,91 @@ The API runs on `http://localhost:5000`, and `GET /api/health` confirms it's up.
 | `JWT_SECRET` | Long random secret used to sign sessions |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` | Outgoing mail server |
 | `EMAIL_FROM` | Sender, e.g. `"Your App <no-reply@example.com>"` |
-| `APP_NAME` | Your app's name in emails (defaults to `AuthKit`) |
+| `APP_NAME` | Your app's name in emails and on database connections (defaults to `AuthKit`) |
+
+Generate a strong `JWT_SECRET` with:
+
+```sh
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
 
 </details>
 
 ## Usage
 
-Protect your own routes with the two guards:
+### Call the API from your frontend
+
+Sessions live in an httpOnly cookie, so the browser stores and sends them for you. Just include credentials on every request:
 
 ```js
-const requireAuth = require('./middlewares/auth.middleware');
-const requireVerified = require('./middlewares/verified.middleware');
-
-router.get('/projects', requireAuth, projectController.list);
-router.post('/projects', requireAuth, requireVerified, projectController.create);
+await fetch('http://localhost:5000/api/v1/auth/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+});
 ```
 
-`requireAuth` loads the signed-in user onto `req.user`. `requireVerified` rejects accounts that haven't confirmed their email with `403 EMAIL_NOT_VERIFIED`.
+### Protect your own routes
+
+```js
+const requireAuth = require('../middlewares/auth.middleware');
+const requireVerified = require('../middlewares/verification.middleware');
+
+router.get('/projects', requireAuth(), projectController.list);
+router.post('/projects', requireAuth(), requireVerified(), projectController.create);
+```
+
+`requireAuth()` loads the signed-in user onto `req.user`. `requireVerified()` rejects accounts that haven't confirmed their email with `403 EMAIL_NOT_VERIFIED`.
+
+### Add a feature the same way
+
+Every route reads top to bottom: limit, authenticate, validate, handle.
+
+```js
+router.post(
+    '/projects',
+    rateLimit(projectLimits.create),
+    requireAuth(),
+    requireVerified(),
+    validateRequest(projectValidator.create),
+    projectController.create
+);
+```
+
+A validator is a plain function that throws when the request is wrong:
+
+```js
+// validators/project.validator.js
+const { BadRequestError } = require('../errors/http.errors');
+
+exports.create = (params, body, query) => {
+    if (typeof body.name !== 'string' || !body.name.trim()) {
+        throw new BadRequestError('Project name is required.');
+    }
+};
+```
+
+<details>
+<summary><b>Middleware conventions</b></summary>
+
+<br>
+
+- Every middleware is a factory: always call it, as in `requireAuth()`, `rateLimit(limits)`, `validateRequest(validator)`.
+- Names start with a verb that says what happens, and each file is named after its concern.
+- Order on every route: `rateLimit → requireAuth → requireVerified → validateRequest → controller`. Cheap checks run first.
+
+| File | Export | Used in |
+| --- | --- | --- |
+| `auth.middleware.js` | `requireAuth()` | routes |
+| `verification.middleware.js` | `requireVerified()` | routes |
+| `ratelimit.middleware.js` | `rateLimit(limits)` | routes |
+| `validation.middleware.js` | `validateRequest(validator)` | routes |
+| `logger.middleware.js` | `logRequest()` | `app.js` |
+| `notfound.middleware.js` | `handleNotFound()` | `app.js` |
+| `error.middleware.js` | `handleError()` | `app.js` |
+
+</details>
 
 ## API
 
@@ -142,6 +212,12 @@ Usernames are 3–32 letters, numbers or underscores. Passwords are 8–72 chara
 }
 ```
 
+</details>
+
+## Errors
+
+Every error has the same shape, so your frontend can branch on `code` and show `message`:
+
 ```jsonc
 // 401 Unauthorized · POST /login
 {
@@ -151,6 +227,33 @@ Usernames are 3–32 letters, numbers or underscores. Passwords are 8–72 chara
 }
 ```
 
+<details>
+<summary><b>Error codes</b></summary>
+
+<br>
+
+| Status | Code | When |
+| :---: | --- | --- |
+| 400 | `BAD_REQUEST` | A field is missing or invalid; `message` says which |
+| 400 | `INVALID_JSON` | The request body isn't valid JSON |
+| 400 | `INVALID_VERIFICATION_TOKEN` | The verification link is wrong, used or expired |
+| 400 | `INVALID_RESET_TOKEN` | The reset link is wrong, used or expired |
+| 400 | `INVALID_CURRENT_PASSWORD` | The current password doesn't match |
+| 400 | `PASSWORD_REUSED` | The new password equals the current one |
+| 400 · 401 | `INVALID_CREDENTIALS` | Wrong username or password |
+| 401 | `AUTH_REQUIRED` | No session cookie |
+| 401 | `INVALID_TOKEN` | The session cookie is invalid or expired |
+| 401 | `SESSION_EXPIRED` | The session was ended by a password change or reset |
+| 401 | `USER_NOT_FOUND` | The account no longer exists |
+| 403 | `EMAIL_NOT_VERIFIED` | The route needs a verified email |
+| 404 | `ROUTE_NOT_FOUND` | No such route |
+| 409 | `USER_ALREADY_EXISTS` | The username or email is taken |
+| 409 | `EMAIL_ALREADY_VERIFIED` | Resend was called on a verified account |
+| 409 | `PASSWORD_CHANGED` | Another request changed the password first |
+| 413 | `PAYLOAD_TOO_LARGE` | The body is over 10 kB |
+| 429 | `TOO_MANY_REQUESTS` | A rate limit was hit; try again later |
+| 500 | `INTERNAL_SERVER_ERROR` | Something broke on the server; details are logged, never sent |
+
 </details>
 
 ## Security
@@ -158,29 +261,59 @@ Usernames are 3–32 letters, numbers or underscores. Passwords are 8–72 chara
 | Threat | How AuthKit handles it |
 | --- | --- |
 | Database leak | Passwords are hashed with bcrypt (12 rounds). Verification and reset tokens are stored only as SHA-256 hashes. |
-| Stolen session | Sessions live in an httpOnly cookie (`SameSite=Lax`, `Secure` in production). A password change or reset ends every existing session. |
+| Stolen session | Sessions live in an httpOnly cookie (`SameSite=Lax`, `Secure` in production) and last 7 days. A password change or reset ends every existing session. |
 | Reused links | Tokens are single use and expire: 24 hours for verification, 60 minutes for reset. |
 | Account enumeration | Login runs a full bcrypt check even for unknown usernames, and forgot-password answers the same either way. |
-| Brute force | Per-route rate limits: 10 failed logins per 15 minutes, 5 emails per hour. |
-| Request abuse | Helmet headers, CORS locked to your client and a 10 kB body limit. |
+| Brute force | Per-route rate limits, from 10 failed logins per 15 minutes to 5 emails per hour. |
+| Request abuse | Helmet headers, CORS locked to your client, and a 10 kB body limit with clean `400` and `413` errors. |
 | Race conditions | State changes are conditional atomic updates, so two concurrent requests can't both succeed. |
 
+<details>
+<summary><b>Rate limits</b></summary>
+
+<br>
+
+| Routes | Limit |
+| --- | --- |
+| `/login` | 10 failed attempts per 15 minutes |
+| `/signup` | 5 per hour |
+| `/password` | 5 failed attempts per 15 minutes |
+| `/verify-email/resend`, `/forgot-password` | 5 per hour |
+| `/verify-email`, `/reset-password`, `/reset-password/verify` | 10 per 15 minutes |
+
+Each route keeps its own counter. Change the numbers in `src/limits/auth.limits.js`.
+
+</details>
+
 Found a vulnerability? Please [report it privately](https://github.com/jyotir-dev/express-auth-kit/security/advisories/new) rather than opening a public issue.
+
+## Deployment
+
+1. **Set `NODE_ENV=production`.** Cookies become `Secure` (HTTPS only), and the app trusts the first proxy so rate limits see real client IPs.
+2. **Serve the API and frontend from the same site**, for example `app.example.com` and `api.example.com`. The session cookie is `SameSite=Lax`, so browsers only send it within one site. If they must live on different domains, switch the cookie to `SameSite=None` in `src/utils/auth-cookie.js`.
+3. **Set `CLIENT_URL` to your frontend's exact origin.** CORS only accepts that origin, and email links point there.
+4. **Use a long random `JWT_SECRET`**, and keep `.env` out of version control.
 
 ## Project structure
 
 ```
 src/
-├── routes/        URLs, wired to limits, validators and controllers
-├── limits/        rate limit per route
-├── validators/    request checks
-├── controllers/   HTTP in, HTTP out
-├── services/      the auth logic
-├── middlewares/   requireAuth, requireVerified, errors
-├── models/        User
-├── security/      JWT and token hashing
-├── mailers/       when each email is sent
-└── emails/        what each email looks like
+├── server.js       starts the server and connects the database
+├── app.js          global middlewares and route mounting
+├── config/         database connection
+├── routes/         URLs, wired to limits, guards, validators and controllers
+├── limits/         rate limits per route
+├── validators/     request checks
+├── controllers/    HTTP in, HTTP out
+├── services/       the auth logic
+├── middlewares/    guards, rate limiting, validation, logging and errors
+├── models/         User
+├── errors/         typed HTTP errors
+├── security/       JWT and token hashing
+├── mailers/        when each email is sent
+├── emails/         what each email looks like
+├── lib/            logger
+└── utils/          auth cookie and async helpers
 ```
 
 Every request moves through `routes → limits → validators → controllers → services`, so each layer has one job and is easy to find.
