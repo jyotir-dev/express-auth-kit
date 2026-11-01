@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema({
         default: false
     },
 
+    role: {
+        type: String,
+        default: USER_ROLE.USER
+    },
+
     // Token Version
     tokenVersion: {
         type: Number,
